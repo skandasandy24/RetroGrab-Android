@@ -102,13 +102,20 @@ internal class AppUpdater(private val context: Context) {
 
     fun cachedApk(name: String): File = File(directory, name)
 
-    suspend fun claimStartupCheck(): Boolean {
+    /**
+     * Whether a startup popup may be shown now. A version this phone hasn't been offered yet is
+     * always due (so a new release shows on the very next open); re-reminding about the same
+     * version, or an empty check, is limited to once every 6 hours.
+     */
+    suspend fun claimStartupCheck(version: String? = null): Boolean {
         val now = System.currentTimeMillis()
         var due = false
         context.settings.edit {
             val last = it[lastStartupCheckKey]
-            if (last == null || now - last >= TimeUnit.HOURS.toMillis(6)) {
+            val newVersion = version != null && it[lastStartupOfferKey] != versionKey(version)
+            if (newVersion || last == null || now - last >= TimeUnit.HOURS.toMillis(6)) {
                 it[lastStartupCheckKey] = now
+                if (version != null) it[lastStartupOfferKey] = versionKey(version)
                 due = true
             }
         }
@@ -154,7 +161,7 @@ internal class AppUpdater(private val context: Context) {
             val sameVersion = prefs[cachedInstalledVersionKey] == BuildConfig.VERSION_NAME
             val cached = if (sameVersion) prefs[cachedUpdateKey]?.let(AppUpdate::decode) else null
             val age = prefs[cachedCheckTimeKey]?.let { System.currentTimeMillis() - it }
-            if (!refresh && sameVersion && age != null && age in 0 until TimeUnit.MINUTES.toMillis(30)) {
+            if (!refresh && sameVersion && age != null && age in 0 until TimeUnit.MINUTES.toMillis(5)) {
                 return@withLock cached
             }
 
@@ -373,6 +380,7 @@ internal class AppUpdater(private val context: Context) {
         private val tagPattern = Regex("(?:android-)?v($VERSION_PATTERN)")
         private val minVersionPattern = Regex("min-version:\\s*($VERSION_PATTERN)", RegexOption.IGNORE_CASE)
         private val lastStartupCheckKey = longPreferencesKey("lastAppUpdateStartupCheck")
+        private val lastStartupOfferKey = stringPreferencesKey("lastAppUpdateStartupOffer")
         private val cachedInstalledVersionKey = stringPreferencesKey("appUpdateCacheInstalledVersion")
         private val cachedCheckTimeKey = longPreferencesKey("appUpdateCacheCheckTime")
         private val cachedUpdateKey = stringPreferencesKey("appUpdateCacheRelease")

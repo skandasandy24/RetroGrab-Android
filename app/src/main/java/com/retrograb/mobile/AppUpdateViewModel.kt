@@ -75,7 +75,7 @@ internal class AppUpdateViewModel(application: Application, private val savedSta
             try {
                 val update = updater.findUpdate(refresh = manual, keepPriorityOnError = !manual)
                 if (!manual && (update == null || update.level == UpdateLevel.NORMAL) &&
-                    !updater.claimStartupCheck()
+                    !updater.claimStartupCheck(update?.version)
                 ) return@launch
                 when {
                     update == null && manual -> message("You're on the latest version (${BuildConfig.VERSION_NAME})")
