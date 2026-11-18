@@ -15,7 +15,8 @@ data class Track(
     val durationMs: Long? = null,
     val album: String? = null,
     val coverUrl: String? = null,
-    val trackNumber: Int? = null
+    val trackNumber: Int? = null,
+    val strictLanguage: Boolean = false
 ) {
     val name get() = "$artist - $title"
     val filename get() = "${safeName(artist)} - ${safeName(title)}"

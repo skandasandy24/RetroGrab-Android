@@ -60,7 +60,7 @@ class History(context: Context) {
     companion object { private val lock = Any() }
 }
 
-fun safeName(name: String): String {
+fun safeName(name: String, maxBytes: Int = 110): String {
     val cleaned = name.map { character ->
         if (character in "\\/:*?\"<>|" || character.isISOControl()) '_' else character
     }.joinToString("").trim(' ', '.')
@@ -71,7 +71,7 @@ fun safeName(name: String): String {
         val codePoint = cleaned.codePointAt(offset)
         val character = String(Character.toChars(codePoint))
         bytes += character.toByteArray(Charsets.UTF_8).size
-        if (bytes > 110) break
+        if (bytes > maxBytes) break
         bounded.append(character)
         offset += character.length
     }

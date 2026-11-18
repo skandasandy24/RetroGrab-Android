@@ -45,15 +45,18 @@ foreach ($abi in 'arm64-v8a', 'armeabi-v7a', 'x86_64', 'universal') {
   Copy-Item (Join-Path $apkDir "app-$abi-release.apk") (Join-Path $out "RetroGrab-$Version-$abi.apk")
 }
 
-# 3. Commit + push
-git -C $root add -A
-git -C $root commit -m "Release $Version" | Out-Null
-git -C $root push origin HEAD
+# 3. Commit + push (git prints harmless warnings on stderr; Windows PowerShell would treat them as fatal)
+$ErrorActionPreference = 'Continue'
+git -C $root add -A 2>&1 | Out-Null
+git -C $root commit -m "Release $Version" 2>&1 | Out-Null
+git -C $root push origin HEAD 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'git push failed - the release was NOT published.' }
 
 # 4. GitHub release (the marker line tells the app how urgent it is; the app hides it)
 $body = $Notes
 if ($Level -ne 'normal') { $body = "$Notes`n`n[$Level]" }
 $bodyFile = Join-Path $out 'notes.md'; [IO.File]::WriteAllText($bodyFile, $body)
 gh release create "v$Version" (Get-ChildItem $out -Filter *.apk).FullName -R $repo -t "RetroGrab $Version" -F $bodyFile
+if ($LASTEXITCODE -ne 0) { throw 'Creating the GitHub release failed.' }
 Write-Host "Published: https://github.com/$repo/releases/tag/v$Version"
 Write-Host "Phones get the alert next time the app opens (or within 24 h)."

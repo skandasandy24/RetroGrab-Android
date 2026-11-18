@@ -15,8 +15,8 @@ android {
         applicationId = "com.retrograb.mobile"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 8
+        versionName = "1.0.6"
     }
     splits {
         abi {

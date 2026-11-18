@@ -112,7 +112,9 @@ internal fun SettingsScreen(
     onCheckAppUpdate: () -> Unit,
     appUpdateNotifications: Boolean,
     changingAppUpdateNotifications: Boolean,
-    onAppUpdateNotificationsChange: (Boolean) -> Unit
+    onAppUpdateNotificationsChange: (Boolean) -> Unit,
+    spotifyLanguageMode: String,
+    onSpotifyLanguageModeChange: (String) -> Unit
 ) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(vertical = 16.dp)) {
         OptionDropdown(
@@ -153,6 +155,18 @@ internal fun SettingsScreen(
             checked = appUpdateNotifications,
             enabled = !changingAppUpdateNotifications,
             onCheckedChange = onAppUpdateNotificationsChange
+        )
+        HorizontalDivider()
+        Text(
+            "Spotify",
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
+            style = MaterialTheme.typography.titleMedium
+        )
+        OptionDropdown(
+            "Songs in several languages", spotifyLanguageMode,
+            listOf(SPOTIFY_LANGUAGE_ASK, SPOTIFY_LANGUAGE_ORIGINAL),
+            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            onSelected = onSpotifyLanguageModeChange
         )
         HorizontalDivider()
         ListItem(

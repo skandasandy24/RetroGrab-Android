@@ -71,7 +71,8 @@ internal fun Preferences.options(source: Source): Map<String, Any> {
             "sp.format" to text("sp.format", "mp3"),
             "sp.quality" to text("sp.quality", "320 kbps"),
             "sp.subfolder" to flag("sp.subfolder", true),
-            "sp.skip" to flag("sp.skip", true)
+            "sp.skip" to flag("sp.skip", true),
+            SPOTIFY_LANGUAGE_SETTING to text(SPOTIFY_LANGUAGE_SETTING, SPOTIFY_LANGUAGE_ASK)
         )
     }
 }
@@ -272,7 +273,7 @@ private fun DownloadStatus(work: WorkInfo?) {
     val data = if (work?.state?.isFinished == true) work.outputData else work?.progress
     val state = when (work?.state) {
         WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> "Queued"
-        WorkInfo.State.RUNNING -> "Downloading"
+        WorkInfo.State.RUNNING -> data?.getString("status") ?: "Downloading"
         WorkInfo.State.SUCCEEDED -> "Finished"
         WorkInfo.State.FAILED -> "Failed"
         WorkInfo.State.CANCELLED -> "Cancelled"

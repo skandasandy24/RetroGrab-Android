@@ -98,6 +98,9 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handleShare(intent)
         handleUpdateIntent(intent)
+        intent.getStringExtra(EXTRA_LANGUAGE_QUESTION)?.let { questionId ->
+            if (questionId == LanguagePrompt.question.value?.id) currentFocus?.clearFocus()
+        }
     }
 
     private fun handleUpdateIntent(intent: Intent) {

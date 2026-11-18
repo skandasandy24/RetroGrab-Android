@@ -76,6 +76,7 @@ private enum class Page { TABS, SETTINGS, LOGIN }
 @Composable
 fun RetroGrabScreen(activity: MainActivity) {
     val prefs by activity.settings.data.collectAsState(initial = emptyPreferences())
+    val languageQuestion by LanguagePrompt.question.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val selected = Source.entries.firstOrNull { it.name == prefs[tabKey] } ?: Source.SPOTIFY
@@ -159,7 +160,7 @@ fun RetroGrabScreen(activity: MainActivity) {
         if (activity.incoming.value == url) activity.incoming.value = null
     }
 
-    PredictiveBackHandler(enabled = !requiresUpdate && page != Page.TABS) { events ->
+    PredictiveBackHandler(enabled = languageQuestion == null && !requiresUpdate && page != Page.TABS) { events ->
         events.collect {}
         page = Page.TABS
     }
@@ -262,7 +263,9 @@ fun RetroGrabScreen(activity: MainActivity) {
                     onCheckAppUpdate = { appUpdates.checkForUpdates() },
                     appUpdateNotifications = prefs[appUpdateNotificationsKey] ?: true,
                     changingAppUpdateNotifications = appUpdates.changingNotifications,
-                    onAppUpdateNotificationsChange = activity::setUpdateNotifications
+                    onAppUpdateNotificationsChange = activity::setUpdateNotifications,
+                    spotifyLanguageMode = prefs[stringPreferencesKey(SPOTIFY_LANGUAGE_SETTING)] ?: SPOTIFY_LANGUAGE_ASK,
+                    onSpotifyLanguageModeChange = { setText(SPOTIFY_LANGUAGE_SETTING, it) }
                 )
                 Page.LOGIN -> InstagramWebView(content, activity::showMessage) {
                     runCatching { session.capture() }.onSuccess { captured ->
@@ -326,6 +329,9 @@ fun RetroGrabScreen(activity: MainActivity) {
             }
         }
         AppUpdateDialogs(activity)
+        languageQuestion?.let { question ->
+            key(question.id) { LanguageQuestionDialog(question) }
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -22,8 +23,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
 import kotlin.concurrent.thread
-import kotlin.math.abs
 
 class DownloadWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     private val app = context.applicationContext as RetroGrabApp
@@ -83,7 +84,7 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
     private fun value(key: String, default: String) = inputData.getString(key) ?: default
     private fun option(key: String) = inputData.getBoolean(key, false)
 
-    private fun foreground(source: Source): ForegroundInfo {
+    private fun foreground(source: Source, status: String? = null): ForegroundInfo {
         if (Build.VERSION.SDK_INT >= 26) {
             notifications.createNotificationChannel(NotificationChannel(
                 "downloads", "RetroGrab downloads", NotificationManager.IMPORTANCE_LOW))
@@ -92,7 +93,7 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(app, "downloads")
             .setContentTitle("RetroGrab · ${source.label}")
-            .setContentText(logs.lastOrNull() ?: "Preparing download")
+            .setContentText(status ?: logs.lastOrNull() ?: "Preparing download")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOnlyAlertOnce(true).setOngoing(true).setContentIntent(open)
             .setProgress(100, progress, progress == 0)
@@ -101,7 +102,7 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
         return ForegroundInfo(id.hashCode(), notification, type)
     }
 
-    private fun report(source: Source, line: String, percent: Int, force: Boolean = false) {
+    private fun report(source: Source, line: String, percent: Int, force: Boolean = false, status: String? = null) {
         if (line.isNotBlank()) {
             val cleaned = line.trim().replace(Regex("https?://[^\\s]+")) { it.value.substringBefore('?') }.take(180)
             if (logs.lastOrNull() != cleaned) {
@@ -113,8 +114,8 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
         val now = android.os.SystemClock.elapsedRealtime()
         if (force || now - lastUpdate >= 350) {
             lastUpdate = now
-            setProgressAsync(workDataOf("log" to logs.joinToString("\n"), "percent" to progress))
-            notifications.notify(id.hashCode(), foreground(source).notification)
+            setProgressAsync(workDataOf("log" to logs.joinToString("\n"), "percent" to progress, "status" to status))
+            notifications.notify(id.hashCode(), foreground(source, status).notification)
         }
     }
 
@@ -128,16 +129,16 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
 
     private suspend fun execute(
         request: YoutubeDLRequest, source: Source, start: Int = 0, end: Int = 98,
-        logOutput: Boolean = true
+        logOutput: Boolean = true, processId: String = id.toString()
     ) = try {
         runInterruptible(Dispatchers.IO) {
-            engine.execute(request, id.toString(), if (logOutput) { percent, _, line ->
+            engine.execute(request, processId, if (logOutput) { percent, _, line ->
                 val position = if (percent < 0) progress else start + ((end - start) * percent / 100).toInt()
                 report(source, line, position)
             } else null)
         }
     } finally {
-        engine.destroyProcessById(id.toString())
+        engine.destroyProcessById(processId)
     }
 
     private suspend fun youtube(url: String, directory: File) {
@@ -277,21 +278,78 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
         val format = value("sp.format", "mp3")
         val quality = value("sp.quality", "320 kbps").substringBefore(' ')
         val folder = if (option("sp.subfolder")) "Spotify" else ""
+        val useSpotifyVersion = value(SPOTIFY_LANGUAGE_SETTING, SPOTIFY_LANGUAGE_ASK) == SPOTIFY_LANGUAGE_ORIGINAL
+        var rememberedLanguage: String? = null
         var failures = 0
-        tracks.forEachIndexed { index, track ->
+        tracks.forEachIndexed { index, original ->
+            var track = original
             currentTitle = track.name
             val start = index * 98 / tracks.size
             val end = (index + 1) * 98 / tracks.size
-            val name = "${track.filename}.$format"
             report(source, "${index + 1}/${tracks.size} · ${track.name}", start, force = true)
-            if (option("sp.skip") && (library.hasAudio(name, "Spotify") || library.hasAudio(name, ""))) {
-                skipped++
-                history.add(HistoryItem(track.name, source, System.currentTimeMillis(), "Skipped"))
-                return@forEachIndexed
-            }
             val trackDirectory = File(directory, index.toString()).apply { mkdirs() }
             try {
-                val candidate = matchSpotifyTrack(track, trackDirectory, start)
+                report(source, "Checking language versions…", start, force = true)
+                val plain = SpotifyLanguages.stripLanguage(track.title)
+                val music = searchYouTubeMusic("${track.artist} - $plain", 10, trackDirectory, start)
+                val youtube = searchSpotifyCandidates(
+                    "ytsearch8:${track.name}", SpotifySource.YOUTUBE, 8, trackDirectory, start
+                )
+                val versions = SpotifyLanguages.detect(track, music + youtube) { candidate ->
+                    lookupVersionDetails(candidate, trackDirectory, start)
+                }
+                val spotifyLanguage = SpotifyLanguages.spotifyLanguage(track)
+                val languages = versions.keys.sortedWith(compareBy({ it != spotifyLanguage }, { it }))
+                val choices = languages.joinToString(", ", transform = SpotifyLanguages::displayName)
+                if (languages.isNotEmpty()) report(source, "Found versions: $choices", start, force = true)
+
+                var selected: SpotifyCandidate? = null
+                var filename = track.filename
+                if (languages.size > 1) {
+                    val question = LanguageQuestion(track.name, languages, spotifyLanguage, tracks.size > 1)
+                    val remembered = rememberedLanguage?.takeIf { it in languages }
+                    val language = when {
+                        remembered != null -> remembered
+                        useSpotifyVersion -> question.defaultLanguage
+                        else -> {
+                            report(source, "Asking which language: ${track.name} ($choices)", start, force = true,
+                                status = "Waiting for you to choose a language…")
+                            val answer = LanguagePrompt.ask(app, question) { fallback ->
+                                report(source, "No answer - used ${SpotifyLanguages.displayName(fallback)}",
+                                    start, force = true)
+                            }
+                            if (answer == null) {
+                                report(source, "Skipped (no language chosen): ${track.name}", end, force = true)
+                                skipped++
+                                history.add(HistoryItem(track.name, source, System.currentTimeMillis(), "Skipped"))
+                                return@forEachIndexed
+                            }
+                            if (answer.useForRest) rememberedLanguage = answer.language
+                            answer.language
+                        }
+                    }
+                    selected = versions.getValue(language)
+                    if (language != ORIGINAL_LANGUAGE_KEY && language != spotifyLanguage) {
+                        val suffix = " [${SpotifyLanguages.displayName(language)}]"
+                        track = original.copy(title = plain + suffix)
+                        currentTitle = track.name
+                        filename = "${safeName(track.artist)} - ${safeName(plain, 110 - suffix.length)}$suffix"
+                    }
+                    report(source, "Match: ${selected.title} [${selected.source.label}]", start, force = true)
+                }
+                val name = "$filename.$format"
+                if (option("sp.skip") && (library.hasAudio(name, "Spotify") || library.hasAudio(name, ""))) {
+                    skipped++
+                    history.add(HistoryItem(track.name, source, System.currentTimeMillis(), "Skipped"))
+                    return@forEachIndexed
+                }
+                val candidate = selected ?: run {
+                    val tagged = if (plain != track.title) {
+                        searchYouTubeMusic(track.name, 5, trackDirectory, start)
+                    } else emptyList()
+                    val candidates = (music + tagged + youtube).filter { it.title.isNotBlank() }.distinctBy { it.id }
+                    findMatch(track, candidates, trackDirectory, start)
+                }
                 val cover = track.coverUrl?.let { coverUrl ->
                     try {
                         runInterruptible { extractors.saveSpotifyCover(coverUrl, File(trackDirectory, "cover.jpg")) }
@@ -304,7 +362,7 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
                     }
                 }
                 val download = request(candidate.url, trackDirectory,
-                    track.filename.replace("%", "%%") + ".%(ext)s").apply {
+                    filename.replace("%", "%%") + ".%(ext)s").apply {
                     addOption("--no-playlist")
                     addOption("-f", "ba/b")
                     addOption("-x")
@@ -333,73 +391,107 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
         check(failures == 0) { "$failures of ${tracks.size} tracks failed. Saved $saved, skipped $skipped." }
     }
 
-    private data class SpotifyCandidate(
-        val url: String,
-        val title: String,
-        val duration: Double?,
-        val durationDifference: Double?,
-        val titleScore: Double
-    )
-
-    private suspend fun matchSpotifyTrack(track: Track, directory: File, start: Int): SpotifyCandidate {
-        val search = request("ytsearch8:${track.name}", directory).apply {
-            addOption("--flat-playlist")
-            addOption("--dump-single-json")
-            addOption("--skip-download")
+    private suspend fun searchYouTubeMusic(
+        query: String, limit: Int, directory: File, start: Int
+    ): List<SpotifyCandidate> {
+        val encoded = Uri.encode(query, "/").replace(Regex("[!'()*]")) { match ->
+            "%${match.value[0].code.toString(16).uppercase()}"
         }
-        val result = execute(search, Source.SPOTIFY, start, start, logOutput = false)
-        val json = result.out.lineSequence().lastOrNull { it.trimStart().startsWith("{") }
-            ?: error("YouTube search returned no results")
-        val entries = JSONObject(json).optJSONArray("entries")?.objects().orEmpty()
-        val expected = spotifyTitleTokens(spotifyWords("${track.artist} ${track.title}"))
-        val trackTitle = " ${spotifyWords(track.title)} "
-        val artists = track.artist.split(", ").map(::spotifyWords).filter { it.isNotEmpty() }
-        val duration = track.durationMs?.div(1000.0)
-        val candidates = entries.mapNotNull { entry ->
-            val url = entry.optString("url")
-            val videoId = listOf(entry.optString("id"), url).firstOrNull(youtubeId::matches)
-            val videoUrl = videoId?.let { "https://www.youtube.com/watch?v=$it" }
-                ?: url.takeIf { Source.fromUrl(it) == Source.YOUTUBE }
-                ?: return@mapNotNull null
-            val title = (entry.opt("title") as? String)?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            val words = spotifyWords(title)
-            val tokens = spotifyTitleTokens(words)
-            val overlap = expected.intersect(tokens).size
-            val similarity = 2.0 * overlap / (expected.size + tokens.size).coerceAtLeast(1)
-            val paddedTitle = " $words "
-            val penalties = spotifyVariants.count { " $it " in paddedTitle && " $it " !in trackTitle }
-            val channel = entry.optString("channel")
-            val channelWords = " ${spotifyWords(channel)} "
-            val channelBonus = if (artists.any { " $it " in channelWords } ||
-                channel.trimEnd().endsWith("- Topic", ignoreCase = true)) 5 else 0
-            val seconds = entry.optDouble("duration").takeIf { it.isFinite() && it > 0 }
-            SpotifyCandidate(
-                videoUrl, title, seconds,
-                if (duration != null && seconds != null) abs(duration - seconds) else null,
-                40 * similarity - 20 * penalties + channelBonus
-            )
-        }
-        val bestTitle = candidates.maxByOrNull { it.titleScore } ?: error("No matching YouTube videos found")
-        val chosen = if (duration == null) bestTitle else {
-            candidates.filter { (it.durationDifference ?: Double.POSITIVE_INFINITY) <= spotifyLengthTolerance }
-                .maxByOrNull {
-                    val distance = requireNotNull(it.durationDifference)
-                    it.titleScore + 100 * (1 - distance / spotifyLengthTolerance)
-                } ?: bestTitle.also {
-                    report(Source.SPOTIFY, "No exact length match, using closest result", start, force = true)
-                }
-        }
-        val length = chosen.duration?.toLong()?.let { "${it / 60}:${(it % 60).toString().padStart(2, '0')}" } ?: "--:--"
-        report(Source.SPOTIFY, "Matched: ${chosen.title} ($length)", start, force = true)
-        return chosen
+        return searchSpotifyCandidates(
+            "https://music.youtube.com/search?q=$encoded#songs", SpotifySource.YOUTUBE_MUSIC, limit, directory, start
+        )
     }
 
-    private fun spotifyWords(text: String): String =
-        text.lowercase().replace(spotifyPunctuation, " ").trim()
+    private suspend fun searchSpotifyCandidates(
+        url: String, source: SpotifySource, limit: Int, directory: File, start: Int
+    ): List<SpotifyCandidate> = try {
+        val search = request(url, directory).apply {
+            addOption("--no-update")
+            addOption("--flat-playlist")
+            addOption("--dump-single-json")
+            addOption("--playlist-end", limit)
+            addOption("--skip-download")
+        }
+        val entries = spotifyMetadata(search, start).getJSONArray("entries")
+        (0 until minOf(entries.length(), limit)).mapNotNull { index ->
+            val entry = entries.optJSONObject(index) ?: return@mapNotNull null
+            val videoId = entry.optString("id").takeIf(youtubeId::matches) ?: return@mapNotNull null
+            val title = entry.stringField("title").orEmpty()
+            val channel = entry.stringField("channel") ?: entry.stringField("uploader").orEmpty()
+            SpotifyCandidate(videoId, title, channel, entry.duration(), source)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w("DownloadWorker", "${source.label} Spotify search failed", error)
+        report(Source.SPOTIFY, "${source.label} search failed", start, force = true)
+        emptyList()
+    }
 
-    private fun spotifyTitleTokens(words: String): Set<String> =
-        words.split(' ').filter { it.isNotEmpty() && it !in spotifyTitleNoise }.toSet()
+    private suspend fun lookupVersionDetails(
+        candidate: SpotifyCandidate, directory: File, start: Int
+    ): SpotifyCandidateDetails? = try {
+        val metadata = request("https://music.youtube.com/watch?v=${candidate.id}", directory).apply {
+            addOption("--no-update")
+            addOption("--skip-download")
+            addOption("-J")
+        }
+        // Each concurrent lookup must own its yt-dlp process, including when a video ID repeats.
+        val json = spotifyMetadata(metadata, start, "$id-language-${UUID.randomUUID()}")
+        SpotifyCandidateDetails(json.duration(), json.stringField("album"))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w("DownloadWorker", "Spotify language metadata lookup failed", error)
+        null
+    }
+
+    private suspend fun findMatch(
+        track: Track, candidates: List<SpotifyCandidate>, directory: File, start: Int
+    ): SpotifyCandidate {
+        val top = candidates.map { it to SpotifyLanguages.score(track, it) }
+            .sortedByDescending { it.second }.take(4)
+        for ((candidate) in top) {
+            val duration = candidate.duration ?: lookupDuration(candidate, directory, start)
+            if (SpotifyLanguages.lengthMismatch(track, duration)) {
+                report(Source.SPOTIFY,
+                    "Skipping '${candidate.title}' - length ${duration}s vs ${track.durationMs?.div(1000.0)}s",
+                    start, force = true)
+                continue
+            }
+            report(Source.SPOTIFY, "Match: ${candidate.title} [${candidate.source.label}]", start, force = true)
+            return candidate
+        }
+        error("No matching song found")
+    }
+
+    private suspend fun lookupDuration(candidate: SpotifyCandidate, directory: File, start: Int): Double? = try {
+        val metadata = request(candidate.url, directory).apply {
+            addOption("--dump-single-json")
+            addOption("--no-playlist")
+            addOption("--skip-download")
+        }
+        spotifyMetadata(metadata, start).duration()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w("DownloadWorker", "Spotify candidate duration lookup failed", error)
+        report(Source.SPOTIFY, "Could not check length for '${candidate.title}'", start, force = true)
+        null
+    }
+
+    private suspend fun spotifyMetadata(
+        request: YoutubeDLRequest, start: Int, processId: String = id.toString()
+    ): JSONObject {
+        val result = execute(request, Source.SPOTIFY, start, start, logOutput = false, processId = processId)
+        val json = result.out.lineSequence().lastOrNull { it.trimStart().startsWith("{") }
+            ?: error("No metadata returned")
+        return JSONObject(json)
+    }
+
+    private fun JSONObject.stringField(key: String): String? = (opt(key) as? String)?.takeIf { it.isNotBlank() }
+
+    private fun JSONObject.duration(): Double? = optDouble("duration").takeIf { it.isFinite() && it > 0 }
 
     private fun tagSpotifyTrack(track: Track, audio: File, cover: File?): File {
         val outputDirectory = File(audio.parentFile, "tagged")
@@ -454,12 +546,7 @@ class DownloadWorker(context: Context, parameters: WorkerParameters) : Coroutine
     }
 
     private companion object {
-        const val spotifyLengthTolerance = 15.0
         val youtubeId = Regex("[A-Za-z0-9_-]{11}")
-        val spotifyPunctuation = Regex("[^\\p{L}\\p{M}\\p{N}]+")
-        val spotifyTitleNoise = setOf("official", "video", "audio", "lyrics", "lyric", "visualizer", "hd", "4k")
-        val spotifyVariants = listOf("live", "cover", "remix", "sped up", "slowed", "reverb",
-            "karaoke", "8d", "nightcore", "1 hour", "instrumental", "mashup")
         val youtubeUpdateErrors = Regex("Precondition check failed|HTTP Error 400|Sign in to confirm", RegexOption.IGNORE_CASE)
         val youtubeOutputs = setOf(
             "mp4", "webm", "mkv", "mp3", "m4a", "opus",
