@@ -16,21 +16,29 @@ import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.Button
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -44,6 +52,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -105,15 +114,18 @@ internal fun DownloadScreen(
         }
     }
     Column(
-        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        PopHeadline("Grab from", source.label, Modifier.padding(top = 4.dp, bottom = 2.dp))
         OutlinedTextField(
             value = link,
             onValueChange = onLinkChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("${source.label} link") },
             singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            colors = popFieldColors(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
             keyboardActions = KeyboardActions(onGo = { download() }),
             trailingIcon = {
@@ -133,11 +145,15 @@ internal fun DownloadScreen(
         DownloadOptions(source, prefs.options(source), setText, setFlag)
 
         if (source == Source.INSTAGRAM) {
-            OutlinedCard(Modifier.fillMaxWidth()) {
+            PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
                 ListItem(
-                    headlineContent = { Text(if (loggedIn) "Logged in" else "Not logged in") },
+                    headlineContent = {
+                        Text(if (loggedIn) "Logged in" else "Not logged in",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                    },
                     trailingContent = {
-                        FilledTonalButton(onClick = if (loggedIn) onLogout else onLogin) {
+                        PopButton(onClick = if (loggedIn) onLogout else onLogin, primary = false,
+                            height = 40.dp, modifier = Modifier.width(132.dp)) {
                             Text(if (loggedIn) "Log out" else "Log in")
                         }
                     },
@@ -147,16 +163,18 @@ internal fun DownloadScreen(
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+            PopButton(
                 onClick = download,
-                modifier = Modifier.weight(1f).height(56.dp),
-                enabled = !busy
+                modifier = Modifier.weight(1f),
+                enabled = !busy,
+                height = 60.dp
             ) {
                 Icon(Icons.Rounded.Download, contentDescription = null)
-                Text("Download", Modifier.padding(start = 8.dp))
+                Text("DOWNLOAD", Modifier.padding(start = 8.dp))
             }
             if (showCancel) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.height(56.dp), enabled = !cancelling) {
+                PopButton(onClick = onCancel, modifier = Modifier.width(128.dp), enabled = !cancelling,
+                    primary = false, height = 60.dp) {
                     Text("Cancel")
                 }
             }
@@ -182,12 +200,12 @@ private fun DownloadOptions(
         SwitchRow(title, options.getValue(key) as Boolean) { setFlag(key, it) }
     }
 
-    OutlinedCard(Modifier.fillMaxWidth()) {
+    PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
         Column(
-            modifier = Modifier.padding(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.padding(vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("Options", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium)
+            SparkleTitle("Options", Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
             when (source) {
                 Source.YOUTUBE -> {
                     choice("Mode", "yt.mode", listOf("Video + Audio", "Audio only", "Video only"))
@@ -231,9 +249,15 @@ internal fun OptionDropdown(
             label = { Text(label) },
             readOnly = true,
             singleLine = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+            shape = RoundedCornerShape(14.dp),
+            colors = popFieldColors(),
+            trailingIcon = { PopDropdownArrow(expanded) }
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(
+            expanded = expanded, onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(14.dp), containerColor = LocalPop.current.card,
+            border = BorderStroke(PopBorder, LocalPop.current.line)
+        ) {
             choices.forEach { choice ->
                 DropdownMenuItem(
                     text = { Text(choice) },
@@ -255,13 +279,14 @@ internal fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     ListItem(
-        headlineContent = { Text(label) },
+        headlineContent = { Text(label, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)) },
         trailingContent = {
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 modifier = Modifier.semantics { contentDescription = label },
-                enabled = enabled
+                enabled = enabled,
+                colors = popSwitchColors()
             )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -282,18 +307,35 @@ private fun DownloadStatus(work: WorkInfo?) {
     // The worker uses zero while it prepares a download without a measured percentage.
     val percent = data?.getInt("percent", -1)?.takeIf { it in 1..100 }
     var expanded by rememberSaveable { mutableStateOf(false) }
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                if (percent == null) state else "$state \u00b7 $percent%",
-                style = MaterialTheme.typography.titleSmall
-            )
-            if (percent != null) {
-                LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.fillMaxWidth())
-            } else if (work?.state?.isFinished == false) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    val pop = LocalPop.current
+    PopCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.animateContentSize(spring(stiffness = 500f)), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val active = work?.state?.isFinished == false
+            val shownPercent by animateIntAsState(percent ?: 0, tween(500), label = "percent")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnimatedVisibility(active, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+                    SpinningSparkle()
+                }
+                Text(
+                    if (percent == null) state else "$state \u00b7 $percent%",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                AnimatedVisibility(percent != null && work?.state != WorkInfo.State.SUCCEEDED, enter = scaleIn(spring(dampingRatio = 0.5f)) + fadeIn(),
+                    exit = scaleOut() + fadeOut()) {
+                    PopChip("$shownPercent%", fill = pop.pink)
+                }
+                AnimatedVisibility(work?.state == WorkInfo.State.SUCCEEDED,
+                    enter = scaleIn(spring(dampingRatio = 0.4f, stiffness = 300f)) + fadeIn()) {
+                    PopChip("Done \u2713", fill = pop.lavender)
+                }
             }
-            TextButton(onClick = { expanded = !expanded }) {
+            if (percent != null) {
+                PopProgress(percent / 100f)
+            } else if (work?.state?.isFinished == false) {
+                PopProgress(null)
+            }
+            TextButton(onClick = { expanded = !expanded }, colors = ButtonDefaults.textButtonColors(contentColor = pop.ink)) {
                 Text(if (expanded) "Hide log" else "Show log")
                 Icon(
                     if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,

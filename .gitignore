@@ -28,3 +28,6 @@ tmp*/
 # ---- Personal / local notes ----
 INSTALL-AND-SHARE.md
 reference-assets/desktop-settings.json
+
+# local UI previews (not part of the app)
+ui-preview/

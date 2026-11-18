@@ -9,15 +9,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
@@ -31,48 +32,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-private val navy = Color(0xFF1E3A8A)
-private val lightBlue = Color(0xFF9DB4FF)
-private val gold = Color(0xFFE0A800)
-private val teal = Color(0xFF0F8A8A)
-
-private val lightColors = lightColorScheme(
-    primary = navy,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE3FF),
-    onPrimaryContainer = Color(0xFF122658),
-    secondary = gold,
-    onSecondary = Color(0xFF302100),
-    secondaryContainer = Color(0xFFFFE3A0),
-    onSecondaryContainer = Color(0xFF382900),
-    tertiary = teal,
-    onTertiary = Color(0xFF001C1C),
-    tertiaryContainer = Color(0xFFACEFEF),
-    onTertiaryContainer = Color(0xFF003737),
-    surfaceTint = navy
-)
-
-private val darkColors = darkColorScheme(
-    primary = lightBlue,
-    onPrimary = Color(0xFF102659),
-    primaryContainer = navy,
-    onPrimaryContainer = Color(0xFFDCE3FF),
-    secondary = gold,
-    onSecondary = Color(0xFF302100),
-    secondaryContainer = Color(0xFF594300),
-    onSecondaryContainer = Color(0xFFFFE3A0),
-    tertiary = teal,
-    onTertiary = Color(0xFF001C1C),
-    tertiaryContainer = Color(0xFF005050),
-    onTertiaryContainer = Color(0xFFACEFEF),
-    surfaceTint = lightBlue
-)
-
 @Composable
 internal fun RetroGrabTheme(
     activity: MainActivity,
     theme: String,
-    wallpaperColors: Boolean,
+    accent: Accent,
     content: @Composable () -> Unit
 ) {
     val dark = when (theme) {
@@ -80,13 +44,7 @@ internal fun RetroGrabTheme(
         "Dark" -> true
         else -> isSystemInDarkTheme()
     }
-    val colors = when {
-        wallpaperColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (dark) dynamicDarkColorScheme(activity) else dynamicLightColorScheme(activity)
-        }
-        dark -> darkColors
-        else -> lightColors
-    }
+    val pop = popColors(dark, wallpaper = null, accent = accent)
 
     SideEffect {
         WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
@@ -94,16 +52,21 @@ internal fun RetroGrabTheme(
             isAppearanceLightNavigationBars = !dark
         }
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    ProvidePop(pop) {
+        MaterialTheme(colorScheme = popColorScheme(pop), typography = PopTypography, shapes = PopShapes, content = content)
+    }
 }
 
 @Composable
 internal fun SettingsScreen(
     modifier: Modifier,
     theme: String,
-    wallpaperColors: Boolean,
     onThemeChange: (String) -> Unit,
-    onWallpaperChange: (Boolean) -> Unit,
+    accentName: String,
+    accentHue: Float,
+    onAccentChange: (String) -> Unit,
+    onHuePreview: (Float) -> Unit,
+    onHueChosen: (Float) -> Unit,
     version: String?,
     updateEnabled: Boolean,
     updating: Boolean,
@@ -116,72 +79,88 @@ internal fun SettingsScreen(
     spotifyLanguageMode: String,
     onSpotifyLanguageModeChange: (String) -> Unit
 ) {
-    Column(modifier.verticalScroll(rememberScrollState()).padding(vertical = 16.dp)) {
-        OptionDropdown(
-            "Theme", theme, listOf("System", "Light", "Dark"),
-            Modifier.padding(horizontal = 16.dp),
-            onSelected = onThemeChange
-        )
-        SwitchRow(
-            "Use wallpaper colors",
-            checked = wallpaperColors,
-            enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
-            onCheckedChange = onWallpaperChange
-        )
-        HorizontalDivider()
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+    val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
+    Column(
+        modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
+            SparkleTitle("Look", Modifier.padding(start = 16.dp, top = 16.dp, bottom = 10.dp))
+            OptionDropdown(
+                "Theme", theme, listOf("System", "Light", "Dark"),
+                Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                onSelected = onThemeChange
+            )
+        }
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+            SparkleTitle("Accent", Modifier.padding(bottom = 4.dp))
+            Text(
+                if (accentName == ACCENT_CUSTOM) "Custom colour" else accentName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            AccentSwatches(accentName, accentHue, onAccentChange)
+            Spacer(Modifier.height(16.dp))
+            Text("Pick any colour", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+            Spacer(Modifier.height(6.dp))
+            AccentSpectrum(accentHue, onHuePreview, onHueChosen)
+        }
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+            SparkleTitle("Download engine", Modifier.padding(bottom = 10.dp))
             Text(
                 version?.let { "Current yt-dlp version: $it" } ?: "Reading yt-dlp version\u2026",
                 style = MaterialTheme.typography.bodyMedium
             )
-            Button(onClick = onUpdate, enabled = updateEnabled) {
+            Spacer(Modifier.height(12.dp))
+            PopButton(onClick = onUpdate, enabled = updateEnabled, primary = false, height = 48.dp) {
                 Text(if (updating) "Updating yt-dlp\u2026" else "Update yt-dlp now")
             }
         }
-        HorizontalDivider()
-        ListItem(
-            headlineContent = { Text("Check for app updates") },
-            supportingContent = {
-                Text(if (checkingAppUpdate) "Checking for updates… (version ${BuildConfig.VERSION_NAME})"
-                    else "Current version ${BuildConfig.VERSION_NAME}")
-            },
-            modifier = Modifier.clickable(enabled = !checkingAppUpdate, onClick = onCheckAppUpdate)
-        )
-        SwitchRow(
-            "Notify me about app updates",
-            checked = appUpdateNotifications,
-            enabled = !changingAppUpdateNotifications,
-            onCheckedChange = onAppUpdateNotificationsChange
-        )
-        HorizontalDivider()
-        Text(
-            "Spotify",
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
-            style = MaterialTheme.typography.titleMedium
-        )
-        OptionDropdown(
-            "Songs in several languages", spotifyLanguageMode,
-            listOf(SPOTIFY_LANGUAGE_ASK, SPOTIFY_LANGUAGE_ORIGINAL),
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            onSelected = onSpotifyLanguageModeChange
-        )
-        HorizontalDivider()
-        ListItem(
-            headlineContent = { Text("Where files are saved") },
-            supportingContent = {
-                Text("Movies / Music / Pictures \u203a RetroGrab")
-            }
-        )
-        ListItem(
-            headlineContent = { Text("About") },
-            supportingContent = { Text("RetroGrab version ${BuildConfig.VERSION_NAME}") }
-        )
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
+            SparkleTitle("App updates", Modifier.padding(start = 16.dp, top = 16.dp, bottom = 2.dp))
+            ListItem(
+                headlineContent = { Text("Check for app updates", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)) },
+                supportingContent = {
+                    Text(if (checkingAppUpdate) "Checking for updates… (version ${BuildConfig.VERSION_NAME})"
+                        else "Current version ${BuildConfig.VERSION_NAME}")
+                },
+                trailingContent = { Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null) },
+                colors = clear,
+                modifier = Modifier.clickable(enabled = !checkingAppUpdate, onClick = onCheckAppUpdate)
+            )
+            SwitchRow(
+                "Notify me about app updates",
+                checked = appUpdateNotifications,
+                enabled = !changingAppUpdateNotifications,
+                onCheckedChange = onAppUpdateNotificationsChange
+            )
+        }
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 16.dp) {
+            SparkleTitle("Spotify", Modifier.padding(bottom = 10.dp))
+            OptionDropdown(
+                "Songs in several languages", spotifyLanguageMode,
+                listOf(SPOTIFY_LANGUAGE_ASK, SPOTIFY_LANGUAGE_ORIGINAL),
+                onSelected = onSpotifyLanguageModeChange
+            )
+        }
+        PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
+            ListItem(
+                headlineContent = { Text("Where files are saved", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)) },
+                supportingContent = {
+                    Text("Movies / Music / Pictures \u203a RetroGrab")
+                },
+                colors = clear
+            )
+            ListItem(
+                headlineContent = { Text("About", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)) },
+                supportingContent = { Text("RetroGrab version ${BuildConfig.VERSION_NAME}") },
+                colors = clear
+            )
+        }
         Text(
             "Only download what you have the right to.",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

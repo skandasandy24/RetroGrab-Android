@@ -9,6 +9,22 @@ Download from <b>YouTube</b>, <b>Instagram</b> and <b>Spotify</b> links on your 
 Looking for the Windows app? → <a href="https://github.com/skandasandy24/RetroGrab">RetroGrab for PC</a>
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/light-spotify.jpg" alt="Spotify tab" width="200">
+  <img src="docs/screenshots/light-youtube.jpg" alt="YouTube tab" width="200">
+  <img src="docs/screenshots/light-history.jpg" alt="Download history" width="200">
+  <img src="docs/screenshots/light-settings-accent.jpg" alt="Settings with accent colours" width="200">
+</p>
+<p align="center">
+  <img src="docs/screenshots/dark-spotify.jpg" alt="Dark mode, blue accent" width="200">
+  <img src="docs/screenshots/dark-download.jpg" alt="Dark mode, finished download" width="200">
+  <img src="docs/screenshots/dark-spotify-mint.jpg" alt="Dark mode, mint accent" width="200">
+  <img src="docs/screenshots/dark-spotify-peach.jpg" alt="Dark mode, peach accent" width="200">
+</p>
+<p align="center"><sub>Light and dark mode, with six accent colours or any colour you pick.</sub></p>
+
 ## Download
 
 Get the newest APK from **[Releases → Latest](https://github.com/skandasandy24/RetroGrab-Android/releases/latest)**:
@@ -23,8 +39,8 @@ Requires Android 7 or newer.
 
 ### Installing
 1. Open the APK. Android asks to allow installs from that app (Chrome, WhatsApp, Files…). Allow it, go back.
-2. Tap **Install**. If Google Play Protect shows *App scan recommended*, tap **Install without scanning**
-   (or *More details → Install anyway*). It does this for every app that isn't from the Play Store.
+2. Tap **Install**. Google Play Protect may warn you (*App scan recommended* or *Harmful app blocked*).
+   Tap **Install without scanning** / **Install anyway**. It flags video downloaders that aren't from the Play Store.
 3. Open RetroGrab and allow notifications (download progress and update alerts).
 
 ### Using it
@@ -40,7 +56,8 @@ History and settings are kept.
 - **YouTube**: video + audio, audio only (MP3 / M4A / Opus) or video only, 360p to 4K, playlists, subtitles, thumbnails.
 - **Instagram**: reels, posts and carousels; log in for private content (cookies stay on the phone).
 - **Spotify**: songs, albums and playlists, matched on YouTube and saved as tagged MP3 / M4A. Spotify's own protected audio is never downloaded.
-- Background downloads with a progress notification, download history, light/dark theme, and yt-dlp that updates itself.
+- Background downloads with a progress notification, download history, and yt-dlp that updates itself.
+- Light and dark mode, six accent colours or any colour from the spectrum, and smooth animations.
 
 ## Building from source
 Android Studio (or JDK 17 + Android SDK 35), then `gradlew assembleRelease` (Windows: `.\gradlew.bat assembleRelease`).

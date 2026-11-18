@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,15 +18,17 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
@@ -61,19 +64,20 @@ internal fun HistoryScreen(activity: MainActivity, work: WorkInfo?, modifier: Mo
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(
-                    Icons.Rounded.History, contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text("No downloads yet", style = MaterialTheme.typography.titleMedium)
+                PopIconBadge(Icons.Rounded.History, Modifier.size(64.dp))
+                Text("No downloads yet", style = MaterialTheme.typography.titleLarge)
             }
         }
         return
     }
 
     val date = remember { SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()) }
-    LazyColumn(modifier) {
+    LazyColumn(
+        modifier,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { PopHeadline("Your", "History", Modifier.padding(top = 4.dp, bottom = 6.dp)) }
         items(historyItems) { item ->
             key(item) {
                 HistoryRow(
@@ -96,7 +100,6 @@ internal fun HistoryScreen(activity: MainActivity, work: WorkInfo?, modifier: Mo
                     }
                 )
             }
-            HorizontalDivider()
         }
     }
 }
@@ -106,17 +109,29 @@ private fun HistoryRow(item: HistoryItem, date: String, onOpen: () -> Unit, onDe
     var menuOpen by remember { mutableStateOf(false) }
     val failed = item.status.startsWith("Failed")
     val row = Modifier.fillMaxWidth()
+    val pop = LocalPop.current
+    PopCard(Modifier.fillMaxWidth(), contentPadding = 0.dp) {
     ListItem(
         modifier = if (item.uri.isNotBlank() || failed) row.clickable(onClick = onOpen) else row,
-        leadingContent = { Icon(item.source.icon(), contentDescription = null) },
-        headlineContent = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            PopIconBadge(item.source.icon(), fill = when (item.source) {
+                Source.YOUTUBE -> pop.pink
+                Source.INSTAGRAM -> pop.lavender
+                Source.SPOTIFY -> pop.card
+            })
+        },
+        headlineContent = {
+            Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+        },
         supportingContent = { Text("${item.source.label} \u00b7 $date") },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
                     item.status == "Saved" -> Icon(
                         Icons.Rounded.CheckCircle, contentDescription = "Saved",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = pop.blue
                     )
                     failed -> Icon(
                         Icons.Rounded.Error, contentDescription = "Failed",
@@ -141,4 +156,5 @@ private fun HistoryRow(item: HistoryItem, date: String, onOpen: () -> Unit, onDe
             }
         }
     )
+    }
 }
