@@ -1,0 +1,30 @@
+# ---- Signing key: NEVER commit (anyone with it could publish fake updates) ----
+keystore.properties
+*.jks
+*.keystore
+
+# ---- Build output (APKs are attached to GitHub Releases instead) ----
+build/
+app/build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+release-out/
+
+# ---- Local machine files ----
+local.properties
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ---- Dev/test leftovers ----
+*.log
+test-shots/
+codex-*.txt
+tmp*/
+
+# ---- Personal / local notes ----
+INSTALL-AND-SHARE.md
+reference-assets/desktop-settings.json

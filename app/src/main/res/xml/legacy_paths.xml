@@ -1,0 +1,6 @@
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="movies" path="Movies/RetroGrab/"/>
+    <external-path name="music" path="Music/RetroGrab/"/>
+    <external-path name="pictures" path="Pictures/RetroGrab/"/>
+    <external-path name="downloads" path="Download/RetroGrab/"/>
+</paths>
