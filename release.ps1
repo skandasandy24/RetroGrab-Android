@@ -80,4 +80,4 @@ gh release create "v$Version" (Get-ChildItem $out -Filter *.apk).FullName -R $re
 if ($LASTEXITCODE -ne 0) { throw 'Creating the GitHub release failed.' }
 Write-Progress -Id 1 -Activity 'RetroGrab release' -Completed
 Write-Host "Published: https://github.com/$repo/releases/tag/v$Version"
-Write-Host "Phones get the alert next time the app opens (or within 24 h)."
+Write-Host "Phones get the alert on the first app open after 6 h since their last check, or from the daily background check (24 h). Settings > Check for app updates shows it right away."
