@@ -53,6 +53,8 @@ function Get-ApkInfo($apk) {
 
 function Part($n, $what) { Write-Progress -Id 2 -ParentId 1 -Activity 'Update safety checks' -Status "$n of 4: $what" -PercentComplete (($n - 1) * 25) }
 function Start-App {
+  # clear anything left on top of the app (e.g. a permission prompt from before the update)
+  & $adb shell am force-stop com.google.android.permissioncontroller 2>&1 | Out-Null
   # wake + unlock the screen, then open the launcher activity directly ("monkey" is flaky right after boot)
   & $adb shell input keyevent KEYCODE_WAKEUP 2>&1 | Out-Null
   & $adb shell wm dismiss-keyguard 2>&1 | Out-Null
@@ -124,7 +126,7 @@ else {
     for ($t = 0; $t -lt 120 -and ((& $adb shell getprop sys.boot_completed) -join '').Trim() -ne '1'; $t++) { Start-Sleep 2 }
   }
   & $adb uninstall $PACKAGE 2>&1 | Out-Null
-  $r = (& $adb install $prevApk.FullName 2>&1) -join ' '
+  $r = (& $adb install -g $prevApk.FullName 2>&1) -join ' '
   if ($r -notmatch 'Success') { Fail "installing the published APK failed: $r" }
   else {
     Start-App
@@ -132,7 +134,7 @@ else {
     $before = ([regex]::Match(((& $adb shell dumpsys package $PACKAGE) -join "`n"), 'firstInstallTime=[^
 ]+')).Value.Trim()
     & $adb logcat -c
-    $r = (& $adb install -r $newApk.FullName 2>&1) -join ' '
+    $r = (& $adb install -r -g $newApk.FullName 2>&1) -join ' '
     if ($r -notmatch 'Success') { Fail "UPDATING over the published version failed: $r" }
     else {
       $alive = Test-Running
