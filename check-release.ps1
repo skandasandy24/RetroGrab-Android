@@ -52,6 +52,24 @@ function Get-ApkInfo($apk) {
 }
 
 function Part($n, $what) { Write-Progress -Id 2 -ParentId 1 -Activity 'Update safety checks' -Status "$n of 4: $what" -PercentComplete (($n - 1) * 25) }
+function Start-App {
+  # wake + unlock the screen, then open the launcher activity directly ("monkey" is flaky right after boot)
+  & $adb shell input keyevent KEYCODE_WAKEUP 2>&1 | Out-Null
+  & $adb shell wm dismiss-keyguard 2>&1 | Out-Null
+  $act = ((& $adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $PACKAGE) | Select-Object -Last 1).ToString().Trim()
+  & $adb shell am start -W -n $act 2>&1 | Out-Null
+}
+function Test-Running {
+  # running = has a process after 10 s; retry the launch once before calling it a failure
+  for ($try = 1; $try -le 2; $try++) {
+    Start-App
+    Start-Sleep 10
+    $p = ((& $adb shell pidof $PACKAGE) -join '').Trim()
+    if ($p) { return $p }
+  }
+  return $null
+}
+
 Part 1 'Build tools'
 Write-Host "`n== 1. Build tools"
 $jv = (& "$env:JAVA_HOME\bin\java.exe" -version 2>&1 | Select-Object -First 1).ToString()
@@ -109,7 +127,7 @@ else {
   $r = (& $adb install $prevApk.FullName 2>&1) -join ' '
   if ($r -notmatch 'Success') { Fail "installing the published APK failed: $r" }
   else {
-    & $adb shell monkey -p $PACKAGE -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null
+    Start-App
     Start-Sleep 6
     $before = ([regex]::Match(((& $adb shell dumpsys package $PACKAGE) -join "`n"), 'firstInstallTime=[^
 ]+')).Value.Trim()
@@ -117,12 +135,10 @@ else {
     $r = (& $adb install -r $newApk.FullName 2>&1) -join ' '
     if ($r -notmatch 'Success') { Fail "UPDATING over the published version failed: $r" }
     else {
-      & $adb shell monkey -p $PACKAGE -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null
-      Start-Sleep 10
+      $alive = Test-Running
       $dump = (& $adb shell dumpsys package $PACKAGE) -join "`n"
       $after = ([regex]::Match($dump, 'firstInstallTime=[^\r\n]+')).Value
       $code = [int]([regex]::Match($dump, 'versionCode=(\d+)').Groups[1].Value)
-      $alive = ((& $adb shell pidof $PACKAGE) -join '').Trim()
       $crash = (& $adb logcat -d -b crash) -join "`n"
       $want = (Get-ApkInfo $newApk.FullName).VersionCode
       if ($code -ne $want) { Fail "after updating, the phone has versionCode $code, expected $want" }
